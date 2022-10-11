@@ -10,12 +10,13 @@
 #include "gstnvdsmeta.h"
 #include "gst-nvmessage.h"
 
-// NVDS Meta accessing
-/*
+
 static GstPadProbeReturn
-tiler_src_pad_buffer_probe (GstPad * pad, GstPadProbeInfo * info,
+probe_nvdsmeta_read (GstPad * pad, GstPadProbeInfo * info,
     gpointer u_data)
 {
+    printf("did I get called?");
+    static guint ii = 0;
     GstBuffer *buf = (GstBuffer *) info->data;
     guint num_rects = 0;
     NvDsObjectMeta *obj_meta = NULL;
@@ -26,29 +27,29 @@ tiler_src_pad_buffer_probe (GstPad * pad, GstPadProbeInfo * info,
 
     NvDsBatchMeta *batch_meta = gst_buffer_get_nvds_batch_meta (buf);
 
+    printf("(--------%d--------)\n", ii++);
+
     for (l_frame = batch_meta->frame_meta_list; l_frame != NULL;
-      l_frame = l_frame->next) {
+      l_frame = l_frame->next)
+    {
         NvDsFrameMeta *frame_meta = (NvDsFrameMeta *) (l_frame->data);
         for (l_obj = frame_meta->obj_meta_list; l_obj != NULL;
-                l_obj = l_obj->next) {
+                l_obj = l_obj->next)
+        {
             obj_meta = (NvDsObjectMeta *) (l_obj->data);
-            if (obj_meta->class_id == PGIE_CLASS_ID_VEHICLE) {
-                vehicle_count++;
-                num_rects++;
-            }
-            if (obj_meta->class_id == PGIE_CLASS_ID_PERSON) {
-                person_count++;
-                num_rects++;
-            }
+            // char* obj_id = strdup("%s", obj_meta->class_id);
+            printf("%d:  %d  %f  %s  %f \n",
+                frame_meta->source_id,
+                obj_meta->class_id,
+                obj_meta->confidence,
+                obj_meta->obj_label,
+                obj_meta->rect_params.left
+                );
         }
-          g_print ("%s: Frame Number = %d Number of objects = %d "
-            "Vehicle Count = %d Person Count = %d\n",
-            (gchar*) u_data,
-            frame_meta->frame_num, num_rects, vehicle_count, person_count);
     }
     return GST_PAD_PROBE_OK;
 }
-*/
+
 
 static gboolean
 bus_call (GstBus * bus, GstMessage * msg, gpointer data)
@@ -110,6 +111,7 @@ main (int argc, char **argv)
 {
     GMainLoop *loop = NULL;
     GstElement *pipeline = NULL;
+    GstPad *tiler_src_pad = NULL;
     GstBus *bus = NULL;
     guint bus_watch_id;
 
@@ -120,8 +122,8 @@ main (int argc, char **argv)
     loop = g_main_loop_new (NULL, FALSE);
 
 
-    #define IM_W  "640"
-    #define IM_H  "480"
+    #define IM_W  "800"
+    #define IM_H  "600"
     #define BATCH "4"
 
     #define RTSP_LOCATION "rtsp://localhost:8554/mystream"
@@ -133,7 +135,6 @@ main (int argc, char **argv)
     #define CAM_2 "/dev/video6"
     #define CAM_3 "/dev/video8"
 
-    // Do not use single quotes in C pipelines!
     const gchar *desc_templ = \
         " v4l2src device="CAM_0"                                                                "
         "     ! image/jpeg, width="IM_W",height="IM_H"                                          "
@@ -152,24 +153,24 @@ main (int argc, char **argv)
         "     ! nvv4l2decoder ! nvvideoconvert ! video/x-raw(memory:NVMM),format=NV12           "
         "     ! m.sink_3                                                                        "
         "   nvstreammux name=m batch-size="BATCH" width=640 height=480 nvbuf-memory-type=0      "
-        "       sync-inputs=true batched-push-timeout=50000                                     "
+        "       sync-inputs=1 batched-push-timeout=50000                                        "
         " ! nvvideoconvert flip-method=clockwise                                                "
-        " ! nvinfer  config-file-path=/nvds/assets/coco_config_infer_primary.txt  interval=1    "
+        " ! nvinfer  config-file-path=/nvds/assets/coco_config_infer_primary.txt  interval=4    "
         " ! nvtracker  display-tracking-id=1  compute-hw=0                                      "
         "     ll-lib-file=/opt/nvidia/deepstream/deepstream/lib/libnvds_nvmultiobjecttracker.so "
-        " ! nvmultistreamtiler width=1920 height=1080                                             "
+        " ! nvmultistreamtiler width=1280 height=720                                            "
         " ! nvdsosd                                                                             "
         " ! tee name=teee                                                                       "
         "     teee.                                                                             "
         "         ! valve name=valve-stream drop=False                                          "
-        "         ! queue max-size-time=0 max-size-bytes=0 max-size-buffers=0                   "
+        "         ! queue leaky=2 max-size-buffers=100                                          "
         "         ! nvvideoconvert                                                              "
-        "         ! video/x-raw,format=I420                                                   "
+        "         ! video/x-raw,format=I420                                                     "
         "         ! x264enc speed-preset=veryfast tune=zerolatency bitrate=20000                "
         "         ! rtspclientsink                                                              "
         "             payloader=pay0                                                            "
-        "             location="RTSP_LOCATION"                                                   "
-        "             protocols="RTSP_PROTOCOL"                                                  "
+        "             location="RTSP_LOCATION"                                                  "
+        "             protocols="RTSP_PROTOCOL"                                                 "
         "             latency=0                                                                 "
         "             sync=false                                                                "
         "         rtph264pay name=pay0 pt=127                                                   "
@@ -186,7 +187,7 @@ main (int argc, char **argv)
         "     teee.                                                                             "
         "         ! queue leaky=2                                                               "
         "         ! valve name=valve-display drop=False                                         "
-        "         ! nveglglessink async=0 sync=0                                                ";
+        "         ! nveglglessink async=0 sync=0                                                "
         ;;;;;;;;
 
     gchar *desc = g_strdup (desc_templ);
@@ -203,18 +204,24 @@ main (int argc, char **argv)
     gst_object_unref (bus);
 
 
-    // Probe for nvdsmeta
-    /*
+    // Probe for nvdsmeta at inference
+    GstElement *probed_element = NULL;
+#if 0
+    //  probe here to be able to link image and its src camera
     gchar *element_name = g_strdup("nvinfer0");
-    pgie = gst_bin_get_by_name (GST_BIN (pipeline), element_name);
-    tiler_src_pad = gst_element_get_static_pad (pgie, "src");
+#else
+    gchar *element_name = g_strdup("rtspclientsink");
+#endif
+    probed_element = gst_bin_get_by_name (GST_BIN (pipeline), element_name);
+    tiler_src_pad = gst_element_get_static_pad (probed_element, "sink");
     if (!tiler_src_pad)
         g_print ("Unable to get src pad\n");
     else
         gst_pad_add_probe (tiler_src_pad, GST_PAD_PROBE_TYPE_BUFFER,
-            tiler_src_pad_buffer_probe, element_name, NULL);
+            probe_nvdsmeta_read, element_name, NULL);
     gst_object_unref (tiler_src_pad);
-    */
+
+
 
     // Set the pipeline to "playing" state
     gst_element_set_state (pipeline, GST_STATE_PLAYING);
