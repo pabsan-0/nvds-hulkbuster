@@ -23,16 +23,45 @@ meta_retrieve (GstPad * pad, GstPadProbeInfo * info, gpointer u_data)
     if (gst_rtp_buffer_get_marker (&rtpbuf)){
         // printf("This guy's got something!\n");
 
-        guint16 * bits = NULL;
-        gpointer message = NULL;
-        guint* wordlen = NULL;
+        //guint16 * bits = NULL;
+        //gpointer message = NULL;
+        //guint* wordlen = NULL;
+        // gst_rtp_buffer_get_extension_data (&rtpbuf, bits, &message, wordlen);
 
-        gst_rtp_buffer_get_extension_data (&rtpbuf, bits, &message, wordlen);
-        printf("%s\n\n", (char*) message);
+        gpointer message;
+        guint8 appbits;
+        guint size;
+
+        if (gst_rtp_buffer_get_extension_twobytes_header (&rtpbuf, &appbits, 1, 0, &message, &size))
+            printf("%s %d\n\n", (char*) message, size);
+        else
+            printf("No extension appended here...\n\n");
+
+        // message = gst_rtp_buffer_get_extension_bytes(&rtpbuf, 0);
+
     }
 
     return GST_PAD_PROBE_OK;
 }
+
+/*
+gboolean
+gst_rtp_buffer_get_extension_twobytes_header (GstRTPBuffer * rtp,
+                                              guint8 * appbits, [o]
+                                              guint8 id,
+                                              guint nth,
+                                              gpointer * data,  [o]
+                                              guint * size)     [o]
+
+
+gboolean
+gst_rtp_buffer_add_extension_twobytes_header (GstRTPBuffer * rtp,
+                                              guint8 appbits,
+                                              guint8 id,
+                                              gconstpointer data,
+                                              guint size)
+
+*/
 
 
 gint

@@ -34,7 +34,7 @@ meta_to_str (GstBuffer* buf, char* str)
     NvDsMetaList * l_obj = NULL;
 
     char *cursor = str;
-    const char *end = str + sizeof(str);
+    const char *end = str + DET_MESSAGE_SIZE;
 
     NvDsBatchMeta *batch_meta = gst_buffer_get_nvds_batch_meta (buf);
     if (!batch_meta->num_frames_in_batch){
@@ -62,9 +62,9 @@ meta_to_str (GstBuffer* buf, char* str)
                         );
             }
         }
-        // Make message end in newline no matter what
-        char* penultimate = str + sizeof(str) - 1;
-        *penultimate = '\n';
+        // Make message end in newline no matter what - THIS MUST BE CHANGED
+        // char* penultimate = str + sizeof(str) - 1;
+        // *penultimate = '\n';
     }
     return;
 }
@@ -76,7 +76,7 @@ meta_nvds_to_gst (GstPad * pad, GstPadProbeInfo * info,
 {
     GstBuffer *buf = (GstBuffer *) info->data;
 
-    char message[DET_MESSAGE_SIZE] = "";
+    char message[DET_MESSAGE_SIZE];
     meta_to_str (buf, message);
 
     GstMetaMarking* mymeta = GST_META_MARKING_ADD(buf);
@@ -185,7 +185,6 @@ main (int argc, char **argv)
 {
     GMainLoop *loop = NULL;
     GstElement *pipeline = NULL;
-    GstPad *tiler_src_pad = NULL;
     GstBus *bus = NULL;
     guint bus_watch_id;
 
