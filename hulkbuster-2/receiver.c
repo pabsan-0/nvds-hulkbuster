@@ -19,9 +19,9 @@ meta_retrieve (GstPad * pad, GstPadProbeInfo * info, gpointer u_data)
     gst_rtp_buffer_map (buffer, GST_MAP_READ, &rtpbuf);
 
     // This would pop every single rtp packet
-    printf("This guy's got somethin'?  ");
+    // printf("This guy's got somethin'?  ");
     if (gst_rtp_buffer_get_marker (&rtpbuf)){
-        printf("This guy's got something!\n");
+        // printf("This guy's got something!\n");
 
         guint16 * bits = NULL;
         gpointer message = NULL;
@@ -67,10 +67,13 @@ main (gint argc, gchar *argv[])
         " ! identity name=retriever "
         " ! application/x-rtp"
         " ! rtph264depay "
-        " ! h264parse "
+        " ! queue leaky=2 max-size-buffers=100 "
+        " ! h264parse config-interval=-1 "
         " ! avdec_h264  "
+        " ! queue leaky=2 max-size-buffers=100 "
         " ! videoconvert "
-        " ! autovideosink ";
+        " ! queue leaky=2 "
+        " ! xvimagesink sync=false async=false ";
 
 
 	/* Launch the pipeline*/
