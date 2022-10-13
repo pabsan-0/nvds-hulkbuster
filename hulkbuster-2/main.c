@@ -49,20 +49,83 @@ probe_nvdsmeta_read (GstPad * pad, GstPadProbeInfo * info,
 }
 
 
+
+/*
+// gathering foobar in a single string
+#define STR_BUF_SIZE 20
+
+char buf[STR_BUF_SIZE] = "";
+char *cur = buf;
+const char *end = buf + sizeof(buf);
+
+// snprintf returns the number of characters which formatting would require
+cur += snprintf(cur, end-cur, "%s", "foo");
+
+if (cur < end) {
+    cur += snprintf(cur, end-cur, "%s", " bar");
+}
+*/
+static void
+meta_to_str (GstBuffer* buf, char* str)
+{
+    NvDsObjectMeta *obj_meta = NULL;
+    NvDsMetaList * l_frame = NULL;
+    NvDsMetaList * l_obj = NULL;
+
+    char *cursor = str;
+    const char *end = str + sizeof(str);
+
+    NvDsBatchMeta *batch_meta = gst_buffer_get_nvds_batch_meta (buf);
+    printf("hey %d", batch_meta->num_frames_in_batch);
+    if (!batch_meta->num_frames_in_batch){
+        return;
+    }
+
+    for (l_frame = batch_meta->frame_meta_list;
+         l_frame != NULL;
+         l_frame = l_frame->next)
+    {
+        NvDsFrameMeta *frame_meta = (NvDsFrameMeta *) (l_frame->data);
+        for (l_obj = frame_meta->obj_meta_list;
+             l_obj != NULL;
+             l_obj = l_obj->next)
+        {
+            obj_meta = (NvDsObjectMeta *) (l_obj->data);
+
+            // Build the message via string-append
+            if (cursor < end) {
+                cursor += snprintf(cursor, end-cursor, "%d:%d:%s:%f\n",
+                        frame_meta->source_id,
+                        obj_meta->class_id,
+                        obj_meta->obj_label,
+                        obj_meta->rect_params.left
+                        );
+            }
+        }
+        // Make message end in newline no matter what
+        char* penultimate = str + sizeof(str) - 1;
+        *penultimate = '\n';
+    }
+    return;
+}
+
+
+#define DET_MESSAGE_SIZE (200)
+
 GstPadProbeReturn
 meta_inject (GstPad * pad, GstPadProbeInfo * info,
     gpointer u_data)
 {
     GstBuffer *buffer = info->data;
     GstRTPBuffer rtpbuf = GST_RTP_BUFFER_INIT;
+
     // Map our original buffer as content for the RTP buffer
     // use READ or you will truncate the image content for reasons I do not understand
     if (gst_rtp_buffer_map (buffer, GST_MAP_READ, &rtpbuf))
     {
-        // Faking a string as klv
-        char* message = "hello gstreamer";
-        guint message_size = 16;
-        gst_rtp_buffer_add_extension_onebyte_header (&rtpbuf, 1, message, message_size);
+        char message[DET_MESSAGE_SIZE] = "";
+        meta_to_str (buffer, message);
+        gst_rtp_buffer_add_extension_onebyte_header (&rtpbuf, 1, message, DET_MESSAGE_SIZE);
     }
     return GST_PAD_PROBE_OK;
 }
@@ -196,16 +259,16 @@ main (int argc, char **argv)
 
     // Probe for nvdsmeta at inference
     //  probe here to be able to link image and its src camera
-    GstElement *probed_element = NULL;
-    gchar *element_name = g_strdup("nvinfer0");
-    probed_element = gst_bin_get_by_name (GST_BIN (pipeline), element_name);
-    tiler_src_pad = gst_element_get_static_pad (probed_element, "src");
-    if (!tiler_src_pad)
-        g_print ("Unable to get src pad\n");
-    else
-        gst_pad_add_probe (tiler_src_pad, GST_PAD_PROBE_TYPE_BUFFER,
-            probe_nvdsmeta_read, element_name, NULL);
-    gst_object_unref (tiler_src_pad);
+    // GstElement *probed_element = NULL;
+    // gchar *element_name = g_strdup("nvinfer0");
+    // probed_element = gst_bin_get_by_name (GST_BIN (pipeline), element_name);
+    // tiler_src_pad = gst_element_get_static_pad (probed_element, "src");
+    // if (!tiler_src_pad)
+    //     g_print ("Unable to get src pad\n");
+    // else
+    //     gst_pad_add_probe (tiler_src_pad, GST_PAD_PROBE_TYPE_BUFFER,
+    //         probe_nvdsmeta_read, element_name, NULL);
+    // gst_object_unref (tiler_src_pad);
 
 
     // Meta injection on RTP packets
