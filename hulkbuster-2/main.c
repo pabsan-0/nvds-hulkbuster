@@ -10,61 +10,22 @@
 
 #include "gstnvdsmeta.h"
 #include "gst-nvmessage.h"
+#include "gstcustommeta.h"
 
 
-static GstPadProbeReturn
-probe_nvdsmeta_read (GstPad * pad, GstPadProbeInfo * info,
-    gpointer u_data)
-{
-    //printf("did I get called?");
-    static guint ii = 0;
-    GstBuffer *buf = (GstBuffer *) info->data;
-    NvDsObjectMeta *obj_meta = NULL;
-    NvDsMetaList * l_frame = NULL;
-    NvDsMetaList * l_obj = NULL;
+#define DET_MESSAGE_SIZE (200)
 
-    NvDsBatchMeta *batch_meta = gst_buffer_get_nvds_batch_meta (buf);
+#define IM_W  "800"
+#define IM_H  "600"
+#define BATCH "1"
 
-    printf("(--------%d--------)\n", ii++);
-
-    for (l_frame = batch_meta->frame_meta_list; l_frame != NULL;
-      l_frame = l_frame->next)
-    {
-        NvDsFrameMeta *frame_meta = (NvDsFrameMeta *) (l_frame->data);
-        for (l_obj = frame_meta->obj_meta_list; l_obj != NULL;
-                l_obj = l_obj->next)
-        {
-            obj_meta = (NvDsObjectMeta *) (l_obj->data);
-            // char* obj_id = strdup("%s", obj_meta->class_id);
-            printf("%d:  %d  %f  %s  %f \n",
-                frame_meta->source_id,
-                obj_meta->class_id,
-                obj_meta->confidence,
-                obj_meta->obj_label,
-                obj_meta->rect_params.left
-                );
-        }
-    }
-    return GST_PAD_PROBE_OK;
-}
+#define CAM_0 "/dev/video2"
+#define CAM_1 "/dev/video4"
+#define CAM_2 "/dev/video6"
+#define CAM_3 "/dev/video8"
 
 
 
-/*
-// gathering foobar in a single string
-#define STR_BUF_SIZE 20
-
-char buf[STR_BUF_SIZE] = "";
-char *cur = buf;
-const char *end = buf + sizeof(buf);
-
-// snprintf returns the number of characters which formatting would require
-cur += snprintf(cur, end-cur, "%s", "foo");
-
-if (cur < end) {
-    cur += snprintf(cur, end-cur, "%s", " bar");
-}
-*/
 static void
 meta_to_str (GstBuffer* buf, char* str)
 {
@@ -76,7 +37,6 @@ meta_to_str (GstBuffer* buf, char* str)
     const char *end = str + sizeof(str);
 
     NvDsBatchMeta *batch_meta = gst_buffer_get_nvds_batch_meta (buf);
-    printf("hey %d", batch_meta->num_frames_in_batch);
     if (!batch_meta->num_frames_in_batch){
         return;
     }
@@ -110,23 +70,37 @@ meta_to_str (GstBuffer* buf, char* str)
 }
 
 
-#define DET_MESSAGE_SIZE (200)
-
 GstPadProbeReturn
-meta_inject (GstPad * pad, GstPadProbeInfo * info,
+meta_nvds_to_gst (GstPad * pad, GstPadProbeInfo * info,
     gpointer u_data)
 {
-    GstBuffer *buffer = info->data;
+    GstBuffer *buf = (GstBuffer *) info->data;
+
+    char message[DET_MESSAGE_SIZE] = "";
+    meta_to_str (buf, message);
+
+    GstMetaMarking* mymeta = GST_META_MARKING_ADD(buf);
+    strcpy(mymeta->detections, message);
+    return GST_PAD_PROBE_OK;
+}
+
+
+GstPadProbeReturn
+meta_gst_to_rtp (GstPad * pad, GstPadProbeInfo * info,
+    gpointer u_data)
+{
+    GstBuffer *buf = info->data;
+
+    GstMetaMarking* mymeta = GST_META_MARKING_GET(buf);
+    char* message = mymeta->detections;
+
+    // use READ or you will truncate the image content
     GstRTPBuffer rtpbuf = GST_RTP_BUFFER_INIT;
 
-    // Map our original buffer as content for the RTP buffer
-    // use READ or you will truncate the image content for reasons I do not understand
-    if (gst_rtp_buffer_map (buffer, GST_MAP_READ, &rtpbuf))
-    {
-        char message[DET_MESSAGE_SIZE] = "";
-        meta_to_str (buffer, message);
-        gst_rtp_buffer_add_extension_onebyte_header (&rtpbuf, 1, message, DET_MESSAGE_SIZE);
-    }
+    if (gst_rtp_buffer_map (buf, GST_MAP_READ, &rtpbuf) &&
+        gst_rtp_buffer_get_marker (&rtpbuf))
+        gst_rtp_buffer_add_extension_twobytes_header (&rtpbuf, 0, 1, message, DET_MESSAGE_SIZE);
+
     return GST_PAD_PROBE_OK;
 }
 
@@ -188,6 +162,23 @@ bus_call (GstBus * bus, GstMessage * msg, gpointer data)
 }
 
 
+gint
+place_probe (GstElement *pipeline, gchar *elementName,
+    GstPadProbeCallback cb_probe)
+{
+    GstElement* id;
+    GstPad* id_src;
+
+    id = gst_bin_get_by_name (GST_BIN (pipeline), elementName);
+    id_src = gst_element_get_static_pad (id, "src");
+    gst_pad_add_probe (id_src, GST_PAD_PROBE_TYPE_BUFFER,
+                cb_probe, elementName, NULL);
+    gst_object_unref(id_src);
+    gst_object_unref(id);
+    return 0;
+}
+
+
 
 int
 main (int argc, char **argv)
@@ -205,14 +196,7 @@ main (int argc, char **argv)
     loop = g_main_loop_new (NULL, FALSE);
 
 
-    #define IM_W  "800"
-    #define IM_H  "600"
-    #define BATCH "1"
 
-    #define CAM_0 "/dev/video2"
-    #define CAM_1 "/dev/video4"
-    #define CAM_2 "/dev/video6"
-    #define CAM_3 "/dev/video8"
 
     const gchar *desc_templ = \
         " v4l2src device="CAM_0"                                                                "
@@ -235,10 +219,11 @@ main (int argc, char **argv)
         "       ! nveglglessink async=0 sync=0                                                  "
 #else
         //"       ! video/x-raw,format=I420                                                       "
-        "       ! videoconvert                                                                "
+        "       ! videoconvert "
+        "       ! identity name=nvds_to_gst "
         "       ! x264enc tune=zerolatency "
         "       ! rtph264pay "
-        "       ! identity name=injector                                                        "
+        "       ! identity name=gst_to_rtp "
         "       ! udpsink host=127.0.0.1 port=1234 "
 #endif
         ;;;;;;;;
@@ -272,11 +257,8 @@ main (int argc, char **argv)
 
 
     // Meta injection on RTP packets
-    GstElement* id = gst_bin_get_by_name (GST_BIN (pipeline), "injector");
-    GstPad* id_src = gst_element_get_static_pad (id, "src");
-    gst_pad_add_probe (id_src, GST_PAD_PROBE_TYPE_BUFFER, meta_inject, NULL, NULL);
-    gst_object_unref(id_src);
-    gst_object_unref(id);
+    place_probe(pipeline, "nvds_to_gst", meta_nvds_to_gst);
+    place_probe(pipeline, "gst_to_rtp", meta_gst_to_rtp);
 
 
     // Set the pipeline to "playing" state
