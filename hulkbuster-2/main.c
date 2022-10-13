@@ -146,10 +146,6 @@ main (int argc, char **argv)
     #define IM_H  "600"
     #define BATCH "1"
 
-    #define RTSP_LOCATION "rtsp://localhost:8554/mystream"
-    #define RTSP_PROTOCOL "udp"
-    #define MQTT_CONN_STR "127.0.0.1;1883"
-
     #define CAM_0 "/dev/video2"
     #define CAM_1 "/dev/video4"
     #define CAM_2 "/dev/video6"
@@ -170,16 +166,17 @@ main (int argc, char **argv)
         "   demux.src_0                                                                         "
         "       ! queue                                                                         "
         "       ! nvvideoconvert                                                                "
-        "       ! nvdsosd                                                                       "
-        "       ! nvvideoconvert                                                                "
+        //"       ! nvdsosd                                                                       "
+        //"       ! nvvideoconvert                                                                "
 #if 0
         "       ! nveglglessink async=0 sync=0                                                  "
 #else
-        "       ! video/x-raw,format=I420                                                       "
-        "       ! x264enc speed-preset=veryfast tune=zerolatency bitrate=20000                  "
-        "       ! rtph264pay name=pay0 pt=127                                                   "
-        "       ! identity name=injector                                                       "
-        "       ! udpsink port=1234                                                             "
+        //"       ! video/x-raw,format=I420                                                       "
+        "       ! videoconvert                                                                "
+        "       ! x264enc tune=zerolatency "
+        "       ! rtph264pay "
+        "       ! identity name=injector                                                        "
+        "       ! udpsink host=127.0.0.1 port=1234 "
 #endif
         ;;;;;;;;
 
