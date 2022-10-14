@@ -7,23 +7,26 @@
 #include <sys/time.h>
 #include <cuda_runtime_api.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 #include "gstnvdsmeta.h"
 #include "gst-nvmessage.h"
 #include "gstcustommeta.h"
 
-
 #define DET_MESSAGE_SIZE (200)
+#define UDP_PORT "1234"
 
 #define IM_W  "800"
 #define IM_H  "600"
-#define BATCH "1"
+#define BATCH "4"
+
+#define TILER_WIDTH "640"
+#define TILER_HEIGHT "480"
 
 #define CAM_0 "/dev/video2"
 #define CAM_1 "/dev/video4"
 #define CAM_2 "/dev/video6"
 #define CAM_3 "/dev/video8"
-
 
 
 static void
@@ -37,9 +40,8 @@ meta_to_str (GstBuffer* buf, char* str)
     const char *end = str + DET_MESSAGE_SIZE;
 
     NvDsBatchMeta *batch_meta = gst_buffer_get_nvds_batch_meta (buf);
-    if (!batch_meta->num_frames_in_batch){
+    if (!batch_meta->num_frames_in_batch)
         return;
-    }
 
     for (l_frame = batch_meta->frame_meta_list;
          l_frame != NULL;
@@ -52,27 +54,33 @@ meta_to_str (GstBuffer* buf, char* str)
         {
             obj_meta = (NvDsObjectMeta *) (l_obj->data);
 
+            // Compute frame id, as it is lost from meta at nvmultistreamtiler
+            // Assumes a 2x2 4-stream tiler configuration
+            int x = (obj_meta->rect_params.top < atof(TILER_HEIGHT) / 2) ? 0: 1;
+            int y = (obj_meta->rect_params.left < atof(TILER_WIDTH) / 2) ? 0: 1;
+
             // Build the message via string-append
-            if (cursor < end) {
-                cursor += snprintf(cursor, end-cursor, "%d:%d:%s:%f\n",
-                        frame_meta->source_id,
-                        obj_meta->class_id,
-                        obj_meta->obj_label,
-                        obj_meta->rect_params.left
+            if (cursor < end)
+            {
+                cursor += snprintf(cursor, end-cursor, "%d%d:%d:%s:%d:%d:%d:%d\n",
+                        (int) x,
+                        (int) y,
+                        (int) obj_meta->class_id,
+                        (char*) obj_meta->obj_label,
+                        (int) obj_meta->rect_params.left,
+                        (int) obj_meta->rect_params.top,
+                        (int) obj_meta->rect_params.width,
+                        (int) obj_meta->rect_params.height
                         );
             }
         }
-        // Make message end in newline no matter what - THIS MUST BE CHANGED
-        // char* penultimate = str + sizeof(str) - 1;
-        // *penultimate = '\n';
     }
     return;
 }
 
 
 GstPadProbeReturn
-meta_nvds_to_gst (GstPad * pad, GstPadProbeInfo * info,
-    gpointer u_data)
+meta_nvds_to_gst (GstPad * pad, GstPadProbeInfo * info, gpointer u_data)
 {
     GstBuffer *buf = (GstBuffer *) info->data;
 
@@ -86,17 +94,15 @@ meta_nvds_to_gst (GstPad * pad, GstPadProbeInfo * info,
 
 
 GstPadProbeReturn
-meta_gst_to_rtp (GstPad * pad, GstPadProbeInfo * info,
-    gpointer u_data)
+meta_gst_to_rtp (GstPad * pad, GstPadProbeInfo * info, gpointer u_data)
 {
     GstBuffer *buf = info->data;
 
     GstMetaMarking* mymeta = GST_META_MARKING_GET(buf);
     char* message = mymeta->detections;
 
-    // use READ or you will truncate the image content
+    // use GST_MAP_READ or you will truncate the image content
     GstRTPBuffer rtpbuf = GST_RTP_BUFFER_INIT;
-
     if (gst_rtp_buffer_map (buf, GST_MAP_READ, &rtpbuf) &&
         gst_rtp_buffer_get_marker (&rtpbuf))
         gst_rtp_buffer_add_extension_twobytes_header (&rtpbuf, 0, 1, message, DET_MESSAGE_SIZE);
@@ -105,7 +111,22 @@ meta_gst_to_rtp (GstPad * pad, GstPadProbeInfo * info,
 }
 
 
+gint
+place_probe (GstElement *pipeline, gchar *elementName,
+    GstPadProbeCallback cb_probe)
+{
+    GstElement* id;
+    GstPad* id_src;
+    char* u_data = NULL;
 
+    id = gst_bin_get_by_name (GST_BIN (pipeline), elementName);
+    id_src = gst_element_get_static_pad (id, "src");
+    gst_pad_add_probe (id_src, GST_PAD_PROBE_TYPE_BUFFER,
+                cb_probe, u_data, NULL);
+    gst_object_unref(id_src);
+    gst_object_unref(id);
+    return 0;
+}
 
 
 static gboolean
@@ -162,24 +183,6 @@ bus_call (GstBus * bus, GstMessage * msg, gpointer data)
 }
 
 
-gint
-place_probe (GstElement *pipeline, gchar *elementName,
-    GstPadProbeCallback cb_probe)
-{
-    GstElement* id;
-    GstPad* id_src;
-
-    id = gst_bin_get_by_name (GST_BIN (pipeline), elementName);
-    id_src = gst_element_get_static_pad (id, "src");
-    gst_pad_add_probe (id_src, GST_PAD_PROBE_TYPE_BUFFER,
-                cb_probe, elementName, NULL);
-    gst_object_unref(id_src);
-    gst_object_unref(id);
-    return 0;
-}
-
-
-
 int
 main (int argc, char **argv)
 {
@@ -187,7 +190,6 @@ main (int argc, char **argv)
     GstElement *pipeline = NULL;
     GstBus *bus = NULL;
     guint bus_watch_id;
-
     GError *error = NULL;
 
     /* Standard GStreamer initialization */
@@ -195,35 +197,44 @@ main (int argc, char **argv)
     loop = g_main_loop_new (NULL, FALSE);
 
 
-
-
     const gchar *desc_templ = \
         " v4l2src device="CAM_0"                                                                "
         "     ! image/jpeg, width="IM_W",height="IM_H"                                          "
         "     ! nvv4l2decoder ! nvvideoconvert ! video/x-raw(memory:NVMM),format=NV12           "
         "     ! m.sink_0                                                                        "
-        "   nvstreammux name=m batch-size="BATCH" width=640 height=480 nvbuf-memory-type=0      "
-        "       sync-inputs=1 batched-push-timeout=500000                                        "
+        " v4l2src device="CAM_1"                                                                "
+        "     ! image/jpeg, width="IM_W",height="IM_H"                                          "
+        "     ! nvv4l2decoder ! nvvideoconvert ! video/x-raw(memory:NVMM),format=NV12           "
+        "     ! m.sink_1                                                                        "
+        " v4l2src device="CAM_2"                                                                "
+        "     ! image/jpeg, width="IM_W",height="IM_H"                                          "
+        "     ! nvv4l2decoder ! nvvideoconvert ! video/x-raw(memory:NVMM),format=NV12           "
+        "     ! m.sink_2                                                                        "
+        " v4l2src device="CAM_3"                                                                "
+        "     ! image/jpeg, width="IM_W",height="IM_H"                                          "
+        "     ! nvv4l2decoder ! nvvideoconvert ! video/x-raw(memory:NVMM),format=NV12           "
+        "     ! m.sink_3                                                                        "
+        "   nvstreammux name=m batch-size="BATCH" width=640 height=640 nvbuf-memory-type=0      "
+        "       sync-inputs=1 batched-push-timeout=500000                                       "
         " ! nvvideoconvert flip-method=clockwise                                                "
-        " ! nvinfer  config-file-path=/nvds/assets/coco_config_infer_primary.txt  interval=4    "
+        " ! nvinfer  config-file-path=/nvds/assets/coco_config_infer_primary.txt  interval=0    "
         " ! nvtracker  display-tracking-id=1  compute-hw=0                                      "
         "     ll-lib-file=/opt/nvidia/deepstream/deepstream/lib/libnvds_nvmultiobjecttracker.so "
-        " ! nvstreamdemux name=demux                                                            "
-        "   demux.src_0                                                                         "
-        "       ! queue                                                                         "
-        "       ! nvvideoconvert                                                                "
-        //"       ! nvdsosd                                                                       "
-        //"       ! nvvideoconvert                                                                "
-#if 0
-        "       ! nveglglessink async=0 sync=0                                                  "
+        " ! nvmultistreamtiler width="TILER_WIDTH" height="TILER_HEIGHT" rows=2 columns=2      "
+        " ! queue                                                                               "
+        " ! nvvideoconvert                                                                      "
+        " ! nvdsosd                                                                             "
+        " ! nvvideoconvert                                                                      "
+#ifdef UDP_PORT
+        " ! identity name=nvds_to_gst                                                           "
+        " ! queue                                                                               "
+        " ! videoconvert                                                                        "
+        " ! x264enc tune=zerolatency                                                            "
+        " ! rtph264pay                                                                          "
+        " ! identity name=gst_to_rtp                                                            "
+        " ! udpsink host=127.0.0.1 port="UDP_PORT"                                              "
 #else
-        //"       ! video/x-raw,format=I420                                                       "
-        "       ! videoconvert "
-        "       ! identity name=nvds_to_gst "
-        "       ! x264enc tune=zerolatency "
-        "       ! rtph264pay "
-        "       ! identity name=gst_to_rtp "
-        "       ! udpsink host=127.0.0.1 port=1234 "
+        " ! nveglglessink async=0 sync=0                                                        "
 #endif
         ;;;;;;;;
 
@@ -240,25 +251,9 @@ main (int argc, char **argv)
     bus_watch_id = gst_bus_add_watch (bus, bus_call, loop);
     gst_object_unref (bus);
 
-
-    // Probe for nvdsmeta at inference
-    //  probe here to be able to link image and its src camera
-    // GstElement *probed_element = NULL;
-    // gchar *element_name = g_strdup("nvinfer0");
-    // probed_element = gst_bin_get_by_name (GST_BIN (pipeline), element_name);
-    // tiler_src_pad = gst_element_get_static_pad (probed_element, "src");
-    // if (!tiler_src_pad)
-    //     g_print ("Unable to get src pad\n");
-    // else
-    //     gst_pad_add_probe (tiler_src_pad, GST_PAD_PROBE_TYPE_BUFFER,
-    //         probe_nvdsmeta_read, element_name, NULL);
-    // gst_object_unref (tiler_src_pad);
-
-
     // Meta injection on RTP packets
     place_probe(pipeline, "nvds_to_gst", meta_nvds_to_gst);
     place_probe(pipeline, "gst_to_rtp", meta_gst_to_rtp);
-
 
     // Set the pipeline to "playing" state
     gst_element_set_state (pipeline, GST_STATE_PLAYING);
@@ -269,10 +264,8 @@ main (int argc, char **argv)
 
     // Out of the main loop, clean up nicely
     g_print ("Returned, stopping playback\n");
-    // gst_object_unref(element_name);
     gst_element_set_state (pipeline, GST_STATE_NULL);
     g_print ("Deleting pipeline. Allow 2 seconds to shut down...\n");
-    sleep(2);
     gst_object_unref (GST_OBJECT (pipeline));
     g_source_remove (bus_watch_id);
     g_main_loop_unref (loop);

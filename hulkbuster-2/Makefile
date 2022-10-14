@@ -30,7 +30,7 @@ LIBS+= -L/usr/local/cuda-$(CUDA_VER)/lib64/ -lcudart -lnvdsgst_helper -lm \
 		-L$(LIB_INSTALL_DIR) -lnvdsgst_meta -lnvds_meta -lnvds_yml_parser \
 		-lcuda -Wl,-rpath,$(LIB_INSTALL_DIR)
 
-all: $(APP)
+all: $(APP) receiver
 
 %.o: %.c $(INCS) Makefile
 	$(CC) -c -Wall -g3 -o $@ $(CFLAGS) $<
@@ -41,8 +41,10 @@ $(APP): $(OBJS) Makefile
 
 
 clean:
-	rm -rf $(OBJS) $(APP)
+	rm -rf $(OBJS) $(APP) receiver.o
 
 
+
+## This rule was added on top of NIVIDIA's file, plus referenced in rule 'all'
 receiver:
 	gcc -Wall -g3  receiver.c -o $@.o `pkg-config --cflags --libs gstreamer-1.0 gstreamer-rtp-1.0`
