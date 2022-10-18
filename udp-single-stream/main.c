@@ -31,7 +31,7 @@
 
 #define MQTT_CONN_STR    "127.0.0.1;5554"
 #define MQTT_PROTO_SO    "/nvds/lib/libnvds_mqtt_proto.so"
-#define MQTT_MSGCONV_CFG "/nvds/assets/msgconv_config.txt"
+#define MQTT_MSGCONV_CFG "/host/udp-single-stream/msgconv_config.txt"
 
 #define DET_MESSAGE_SIZE (200)
 #define UDP_PORT "1234"
@@ -53,6 +53,13 @@
     " nvstreammux name=remux nvbuf-memory-type=0                         " \
     "       batch-size="BATCH" width=640 height=640                      " \
     "       sync-inputs=1 batched-push-timeout=500000                    """
+
+#define TILE_PLUS_OSD \
+    "   nvmultistreamtiler width="TILER_WIDTH" height="TILER_HEIGHT" " \
+    " ! queue                                                        " \
+    " ! nvvideoconvert                                               " \
+    " ! nvdsosd                                                      " \
+    " ! nvvideoconvert                                               """
 
 #define MQTT_SINK \
     " queue leaky=2                                " \
@@ -248,14 +255,14 @@ main (int argc, char **argv)
         "       ll-lib-file="TRACKER_SO"                                 "
         "                                                                "
         " ! "REMUX"                                                      "
-        " ! nvmultistreamtiler width="TILER_WIDTH" height="TILER_HEIGHT" "
-        " ! queue                                                        "
-        " ! nvvideoconvert                                               "
-        " ! nvdsosd                                                      "
-        " ! nvvideoconvert                                               "
-        "                                                                "
         " ! tee name=teee                                                "
         "   teee.                                                        "
+        "       ! "MQTT_SINK"                                            "
+        "   teee.                                                        "
+        "       ! "TILE_PLUS_OSD"                                        "
+        "       ! nveglglessink async=0 sync=0                           "
+        "   teee.                                                        "
+        "       ! "TILE_PLUS_OSD"                                        "
         "       ! queue                                                  "
         "       ! identity name=nvds_to_gst                              "
         "       ! queue                                                  "
@@ -265,10 +272,6 @@ main (int argc, char **argv)
         "       ! rtph265pay                                             "
         "       ! identity name=gst_to_rtp                               "
         "       ! udpsink host=127.0.0.1 port="UDP_PORT"                 "
-        "   teee.                                                        "
-        "       ! "MQTT_SINK"                                            "
-        "   teee.                                                        "
-        "       ! nveglglessink async=0 sync=0                           "
         ;;;;;;;;
 
     gchar *desc = g_strdup (desc_templ);
