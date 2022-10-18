@@ -13,30 +13,36 @@
 #include "gst-nvmessage.h"
 #include "gstcustommeta.h"
 
-#define DET_MESSAGE_SIZE (200)
-#define UDP_PORT "1234"
-
-#define IM_W  "640"
-#define IM_H  "480"
-#define BATCH "4"
-
-#define TILER_WIDTH "640"
-#define TILER_HEIGHT "480"
 
 #define CAM_0 "/dev/video4"
 #define CAM_1 "/dev/video8"
 #define CAM_2 "/dev/video2"
 #define CAM_3 "/dev/video6"
 
+#define CAP_W  "640"
+#define CAP_H  "480"
+
+#define TILER_WIDTH "640"
+#define TILER_HEIGHT "480"
+#define BATCH "4"
+
 #define PGIE_CFG "/nvds/assets/coco_config_infer_primary.txt"
 #define TRACKER_SO "/opt/nvidia/deepstream/deepstream/lib/libnvds_nvmultiobjecttracker.so"
 
+#define MQTT_CONN_STR    "127.0.0.1;5554"
+#define MQTT_PROTO_SO    "/nvds/lib/libnvds_mqtt_proto.so"
+#define MQTT_MSGCONV_CFG "/nvds/assets/msgconv_config.txt"
+
+#define DET_MESSAGE_SIZE (200)
+#define UDP_PORT "1234"
+
+
 #define V4L2_DECODE \
     " identity                                                       " \
-    "   ! image/jpeg, width="IM_W",height="IM_H", framerate=30/1     " \
+    "   ! image/jpeg, width="CAP_W",height="CAP_H", framerate=30/1   " \
     "   ! queue                                                      " \
     "   ! nvv4l2decoder low-latency-mode=1                           " \
-    "   ! nvvideoconvert ! video/x-raw(memory:NVMM),format=NV12      "
+    "   ! nvvideoconvert ! video/x-raw(memory:NVMM),format=NV12      """
 
 #define REMUX \
     " nvstreamdemux name=demux                                           " \
@@ -46,7 +52,18 @@
     "     demux.src_3 ! valve name=valve_cam_3 drop=false ! remux.sink_3 " \
     " nvstreammux name=remux nvbuf-memory-type=0                         " \
     "       batch-size="BATCH" width=640 height=640                      " \
-    "       sync-inputs=1 batched-push-timeout=500000 "
+    "       sync-inputs=1 batched-push-timeout=500000                    """
+
+#define MQTT_SINK \
+    " queue leaky=2                                " \
+    "   ! valve name=valve_mqtt_dets drop=False    " \
+    "   ! nvmsgconv msg2p-newapi=1                 " \
+    "       config="MQTT_MSGCONV_CFG"              " \
+    "       payload-type=1                         " \
+    "       frame-interval=1                       " \
+    "   ! nvmsgbroker conn-str="MQTT_CONN_STR"     " \
+    "       proto-lib="MQTT_PROTO_SO"              " \
+    "       topic=hulkbuster                       """
 
 
 static void
@@ -248,6 +265,8 @@ main (int argc, char **argv)
         "       ! rtph265pay                                             "
         "       ! identity name=gst_to_rtp                               "
         "       ! udpsink host=127.0.0.1 port="UDP_PORT"                 "
+        "   teee.                                                        "
+        "       ! "MQTT_SINK"                                            "
         "   teee.                                                        "
         "       ! nveglglessink async=0 sync=0                           "
         ;;;;;;;;
