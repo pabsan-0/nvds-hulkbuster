@@ -24,9 +24,29 @@
 #define TILER_HEIGHT "480"
 
 #define CAM_0 "/dev/video4"
-#define CAM_1 "/dev/video7"
+#define CAM_1 "/dev/video8"
 #define CAM_2 "/dev/video2"
 #define CAM_3 "/dev/video6"
+
+#define PGIE_CFG "/nvds/assets/coco_config_infer_primary.txt"
+#define TRACKER_SO "/opt/nvidia/deepstream/deepstream/lib/libnvds_nvmultiobjecttracker.so"
+
+#define V4L2_DECODE \
+    " identity                                                       " \
+    "   ! image/jpeg, width="IM_W",height="IM_H", framerate=30/1     " \
+    "   ! queue                                                      " \
+    "   ! nvv4l2decoder low-latency-mode=1                           " \
+    "   ! nvvideoconvert ! video/x-raw(memory:NVMM),format=NV12      "
+
+#define REMUX \
+    " nvstreamdemux name=demux                                           " \
+    "     demux.src_0 ! valve name=valve_cam_0 drop=false ! remux.sink_0 " \
+    "     demux.src_1 ! valve name=valve_cam_1 drop=false ! remux.sink_1 " \
+    "     demux.src_2 ! valve name=valve_cam_2 drop=false ! remux.sink_2 " \
+    "     demux.src_3 ! valve name=valve_cam_3 drop=false ! remux.sink_3 " \
+    " nvstreammux name=remux nvbuf-memory-type=0                         " \
+    "       batch-size="BATCH" width=640 height=640                      " \
+    "       sync-inputs=1 batched-push-timeout=500000 "
 
 
 static void
@@ -196,48 +216,40 @@ main (int argc, char **argv)
     gst_init (&argc, &argv);
     loop = g_main_loop_new (NULL, FALSE);
 
-
     const gchar *desc_templ = \
-        " v4l2src device="CAM_0"                                                                "
-        "     ! image/jpeg, width="IM_W",height="IM_H", framerate=30/1 ! queue                  "
-        "     ! nvv4l2decoder low-latency-mode=1 ! nvvideoconvert ! video/x-raw(memory:NVMM),format=NV12 "
-        "     ! m.sink_0                                                                        "
-        " v4l2src device="CAM_1"                                                                "
-        "     ! image/jpeg, width="IM_W",height="IM_H", framerate=30/1 ! queue                          "
-        "     ! nvv4l2decoder low-latency-mode=1 ! nvvideoconvert ! video/x-raw(memory:NVMM),format=NV12 "
-        "     ! m.sink_1                                                                        "
-        " v4l2src device="CAM_2"                                                                "
-        "     ! image/jpeg, width="IM_W",height="IM_H", framerate=30/1 ! queue                         "
-        "     ! nvv4l2decoder low-latency-mode=1 ! nvvideoconvert ! video/x-raw(memory:NVMM),format=NV12 "
-        "     ! m.sink_2                                                                        "
-        " v4l2src device="CAM_3"                                                                "
-        "     ! image/jpeg, width="IM_W",height="IM_H", framerate=30/1 ! queue                         "
-        "     ! nvv4l2decoder low-latency-mode=1 ! nvvideoconvert ! video/x-raw(memory:NVMM),format=NV12 "
-        "     ! m.sink_3                                                                        "
-        "   nvstreammux name=m batch-size="BATCH" width=640 height=640 nvbuf-memory-type=0      "
-        "       sync-inputs=1 batched-push-timeout=500000                                       "
-        " ! nvvideoconvert flip-method=clockwise                                                "
-        " ! nvinfer  config-file-path=/nvds/assets/coco_config_infer_primary.txt  interval=4    "
-        " ! nvtracker  display-tracking-id=1  compute-hw=0                                      "
-        "     ll-lib-file=/opt/nvidia/deepstream/deepstream/lib/libnvds_nvmultiobjecttracker.so "
-        " ! nvmultistreamtiler width="TILER_WIDTH" height="TILER_HEIGHT" rows=2 columns=2      "
-        " ! queue                                                                               "
-        " ! nvvideoconvert                                                                      "
-        " ! nvdsosd                                                                             "
-        " ! nvvideoconvert                                                                      "
-#ifdef UDP_PORT
-        " ! queue                                                                               "
-        " ! identity name=nvds_to_gst                                                           "
-        " ! queue                                                                               "
-        " ! videoconvert                                                                        "
-        " ! video/x-raw, format=I420, width=640, height=480                                     "
-        " ! x265enc tune=zerolatency                                                            "
-        " ! rtph265pay                                                                          "
-        " ! identity name=gst_to_rtp                                                            "
-        " ! udpsink host=127.0.0.1 port="UDP_PORT"                                              "
-#else
-        " ! nveglglessink async=0 sync=0                                                        "
-#endif
+        " v4l2src device="CAM_0" ! "V4L2_DECODE" ! mux.sink_0            "
+        " v4l2src device="CAM_1" ! "V4L2_DECODE" ! mux.sink_1            "
+        " v4l2src device="CAM_2" ! "V4L2_DECODE" ! mux.sink_2            "
+        " v4l2src device="CAM_3" ! "V4L2_DECODE" ! mux.sink_3            "
+        "                                                                "
+        "   nvstreammux name=mux nvbuf-memory-type=0                     "
+        "       batch-size="BATCH" width=640 height=640                  "
+        "       sync-inputs=1 batched-push-timeout=500000                "
+        " ! nvvideoconvert flip-method=clockwise                         "
+        " ! nvinfer config-file-path="PGIE_CFG" interval=4               "
+        " ! nvtracker display-tracking-id=0 compute-hw=0                 "
+        "       ll-lib-file="TRACKER_SO"                                 "
+        "                                                                "
+        " ! "REMUX"                                                      "
+        " ! nvmultistreamtiler width="TILER_WIDTH" height="TILER_HEIGHT" "
+        " ! queue                                                        "
+        " ! nvvideoconvert                                               "
+        " ! nvdsosd                                                      "
+        " ! nvvideoconvert                                               "
+        "                                                                "
+        " ! tee name=teee                                                "
+        "   teee.                                                        "
+        "       ! queue                                                  "
+        "       ! identity name=nvds_to_gst                              "
+        "       ! queue                                                  "
+        "       ! videoconvert                                           "
+        "       ! video/x-raw, format=I420, width=640, height=480        "
+        "       ! x265enc tune=zerolatency                               "
+        "       ! rtph265pay                                             "
+        "       ! identity name=gst_to_rtp                               "
+        "       ! udpsink host=127.0.0.1 port="UDP_PORT"                 "
+        "   teee.                                                        "
+        "       ! nveglglessink async=0 sync=0                           "
         ;;;;;;;;
 
     gchar *desc = g_strdup (desc_templ);
