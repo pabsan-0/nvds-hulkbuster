@@ -13,11 +13,11 @@
 #include "gst-nvmessage.h"
 #include "gstcustommeta.h"
 
-
-#define CAM_0 "/dev/video4"
+#define CAM_0 "/dev/video7"
 #define CAM_1 "/dev/video8"
-#define CAM_2 "/dev/video2"
-#define CAM_3 "/dev/video6"
+#define CAM_2 "/dev/video4"
+#define CAM_3 "/dev/video2"
+
 
 #define CAP_W  "640"
 #define CAP_H  "480"
@@ -154,6 +154,35 @@ meta_gst_to_rtp (GstPad * pad, GstPadProbeInfo * info, gpointer u_data)
     return GST_PAD_PROBE_OK;
 }
 
+/* Using fdsrc to read from stdin:
+ *      If pipeline freezes on boot, pass a character and it should run
+ */
+GstPadProbeReturn
+control_handler (GstPad * pad, GstPadProbeInfo * info, gpointer u_data)
+{
+    GstBuffer *buf = info->data;
+    
+    GstMapInfo map;
+    if (!gst_buffer_map (buf, &map, GST_MAP_READ)) {
+        //GST_ERROR ("Custom probe at fdsrc: could not map buffer.");
+        return GST_PAD_PROBE_OK;
+
+    // gst_util_dump_mem (map.data, map.size); // this to dump bytes into memory, most useful!
+
+    // This ugly to get rid of display newline
+    printf("@ Received '");
+    for (int i=0; i < (int) map.size; i++) {
+        map.data[i] == '\n' ? true : printf("%c", map.data[i]);
+    }
+    printf("' from stdin\n");
+
+
+    char* text_command = map.data;
+    
+    gst_buffer_unmap (buf, &map);
+    return GST_PAD_PROBE_OK;
+}
+
 
 gint
 place_probe (GstElement *pipeline, gchar *elementName,
@@ -241,6 +270,7 @@ main (int argc, char **argv)
     loop = g_main_loop_new (NULL, FALSE);
 
     const gchar *desc_templ = \
+        " fdsrc name=control ! fakesink dump=true                        " // IF PIPE FREEZES, JUST FEED INPUT TO STDIN
         " v4l2src device="CAM_0" ! "V4L2_DECODE" ! mux.sink_0            "
         " v4l2src device="CAM_1" ! "V4L2_DECODE" ! mux.sink_1            "
         " v4l2src device="CAM_2" ! "V4L2_DECODE" ! mux.sink_2            "
@@ -254,15 +284,14 @@ main (int argc, char **argv)
         " ! nvtracker display-tracking-id=0 compute-hw=0                 "
         "       ll-lib-file="TRACKER_SO"                                 "
         "                                                                "
-        " ! "REMUX"                                                      "
-        " ! tee name=teee                                                "
-        "   teee.                                                        "
+        // " ! "REMUX"                                                      "
+        " ! tee name=teee1                                               "
+        "   teee1.                                                       "
         "       ! "MQTT_SINK"                                            "
-        "   teee.                                                        "
+        "   teee1.                                                       "
         "       ! "TILE_PLUS_OSD"                                        "
-        "       ! nveglglessink async=0 sync=0                           "
-        "   teee.                                                        "
-        "       ! "TILE_PLUS_OSD"                                        "
+        "       ! tee name=teee2                                         "
+        "   teee2.                                                       "
         "       ! queue                                                  "
         "       ! identity name=nvds_to_gst                              "
         "       ! queue                                                  "
@@ -272,6 +301,8 @@ main (int argc, char **argv)
         "       ! rtph265pay                                             "
         "       ! identity name=gst_to_rtp                               "
         "       ! udpsink host=127.0.0.1 port="UDP_PORT"                 "
+        "   teee2.                                                       "
+        "       ! nveglglessink async=0 sync=0                           "
         ;;;;;;;;
 
     gchar *desc = g_strdup (desc_templ);
@@ -290,6 +321,7 @@ main (int argc, char **argv)
     // Meta injection on RTP packets
     place_probe(pipeline, "nvds_to_gst", meta_nvds_to_gst);
     place_probe(pipeline, "gst_to_rtp", meta_gst_to_rtp);
+    place_probe(pipeline, "control", control_handler);
 
     // Set the pipeline to "playing" state
     gst_element_set_state (pipeline, GST_STATE_PLAYING);
