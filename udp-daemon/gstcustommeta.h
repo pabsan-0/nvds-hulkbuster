@@ -20,4 +20,4 @@ const GstMetaInfo* gst_meta_marking_get_info (void);
 
 G_END_DECLS
 
-#endif
+#endif /* __GST_MARK_H__ */

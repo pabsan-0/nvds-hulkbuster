@@ -12,6 +12,7 @@
 #include "gstnvdsmeta.h"
 #include "gst-nvmessage.h"
 #include "gstcustommeta.h"
+#include "gstfdcontrol.h"
 
 #define CAM_0 "/dev/video7"
 #define CAM_1 "/dev/video8"
@@ -154,43 +155,14 @@ meta_gst_to_rtp (GstPad * pad, GstPadProbeInfo * info, gpointer u_data)
     return GST_PAD_PROBE_OK;
 }
 
-/* Using fdsrc to read from stdin:
- *      If pipeline freezes on boot, pass a character and it should run
- */
-GstPadProbeReturn
-control_handler (GstPad * pad, GstPadProbeInfo * info, gpointer u_data)
-{
-    GstBuffer *buf = info->data;
-    
-    GstMapInfo map;
-    if (!gst_buffer_map (buf, &map, GST_MAP_READ)) {
-        //GST_ERROR ("Custom probe at fdsrc: could not map buffer.");
-        return GST_PAD_PROBE_OK;
-
-    // gst_util_dump_mem (map.data, map.size); // this to dump bytes into memory, most useful!
-
-    // This ugly to get rid of display newline
-    printf("@ Received '");
-    for (int i=0; i < (int) map.size; i++) {
-        map.data[i] == '\n' ? true : printf("%c", map.data[i]);
-    }
-    printf("' from stdin\n");
-
-
-    char* text_command = map.data;
-    
-    gst_buffer_unmap (buf, &map);
-    return GST_PAD_PROBE_OK;
-}
 
 
 gint
 place_probe (GstElement *pipeline, gchar *elementName,
-    GstPadProbeCallback cb_probe)
+    GstPadProbeCallback cb_probe, gpointer u_data)
 {
     GstElement* id;
     GstPad* id_src;
-    char* u_data = NULL;
 
     id = gst_bin_get_by_name (GST_BIN (pipeline), elementName);
     id_src = gst_element_get_static_pad (id, "src");
@@ -270,7 +242,7 @@ main (int argc, char **argv)
     loop = g_main_loop_new (NULL, FALSE);
 
     const gchar *desc_templ = \
-        " fdsrc name=control ! fakesink dump=true                        " // IF PIPE FREEZES, JUST FEED INPUT TO STDIN
+        " fdsrc fd=0 name=control ! fakesink dump=false                  " // IF PIPE FREEZES, JUST FEED INPUT TO STDIN
         " v4l2src device="CAM_0" ! "V4L2_DECODE" ! mux.sink_0            "
         " v4l2src device="CAM_1" ! "V4L2_DECODE" ! mux.sink_1            "
         " v4l2src device="CAM_2" ! "V4L2_DECODE" ! mux.sink_2            "
@@ -319,9 +291,9 @@ main (int argc, char **argv)
     gst_object_unref (bus);
 
     // Meta injection on RTP packets
-    place_probe(pipeline, "nvds_to_gst", meta_nvds_to_gst);
-    place_probe(pipeline, "gst_to_rtp", meta_gst_to_rtp);
-    place_probe(pipeline, "control", control_handler);
+    place_probe(pipeline, "nvds_to_gst", meta_nvds_to_gst, NULL);
+    place_probe(pipeline, "gst_to_rtp", meta_gst_to_rtp, NULL);
+    place_probe(pipeline, "control", control_handler, pipeline);
 
     // Set the pipeline to "playing" state
     gst_element_set_state (pipeline, GST_STATE_PLAYING);

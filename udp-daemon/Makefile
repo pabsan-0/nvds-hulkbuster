@@ -11,7 +11,7 @@ NVDS_VERSION:=6.1
 
 LIB_INSTALL_DIR?=/opt/nvidia/deepstream/deepstream-$(NVDS_VERSION)/lib/
 
-SRCS:= main.c gstcustommeta.c
+SRCS:= main.c gstcustommeta.c gstfdcontrol.c
 
 INCS:= $(wildcard *.h)
 
