@@ -15,7 +15,7 @@ SRCS:= main.c gstcustommeta.c gstfdcontrol.c
 
 INCS:= $(wildcard *.h)
 
-PKGS:= gstreamer-1.0 gstreamer-rtp-1.0
+PKGS:= gstreamer-1.0 gstreamer-rtp-1.0 gstreamer-controller-1.0
 
 OBJS:= $(SRCS:.c=.o)
 

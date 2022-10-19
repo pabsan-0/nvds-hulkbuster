@@ -243,7 +243,7 @@ main (int argc, char **argv)
 
     const gchar *desc_templ = \
         " fdsrc fd=0 name=control ! fakesink dump=false                  " // IF PIPE FREEZES, JUST FEED INPUT TO STDIN
-        " v4l2src device="CAM_0" ! "V4L2_DECODE" ! mux.sink_0            "
+        " v4l2src device="CAM_0" ! "V4L2_DECODE" ! valve name=valve0 ! mux.sink_0            "
         " v4l2src device="CAM_1" ! "V4L2_DECODE" ! mux.sink_1            "
         " v4l2src device="CAM_2" ! "V4L2_DECODE" ! mux.sink_2            "
         " v4l2src device="CAM_3" ! "V4L2_DECODE" ! mux.sink_3            "
