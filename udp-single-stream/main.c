@@ -14,10 +14,10 @@
 #include "gstcustommeta.h"
 
 
-#define CAM_0 "/dev/video4"
+#define CAM_0 "/dev/video7"
 #define CAM_1 "/dev/video8"
-#define CAM_2 "/dev/video2"
-#define CAM_3 "/dev/video6"
+#define CAM_2 "/dev/video4"
+#define CAM_3 "/dev/video2"
 
 #define CAP_W  "640"
 #define CAP_H  "480"
@@ -254,15 +254,14 @@ main (int argc, char **argv)
         " ! nvtracker display-tracking-id=0 compute-hw=0                 "
         "       ll-lib-file="TRACKER_SO"                                 "
         "                                                                "
-        " ! "REMUX"                                                      "
-        " ! tee name=teee                                                "
-        "   teee.                                                        "
+        // " ! "REMUX"                                                   "
+        " ! tee name=teee1                                               "
+        "   teee1.                                                       "
         "       ! "MQTT_SINK"                                            "
-        "   teee.                                                        "
+        "   teee1.                                                       "
         "       ! "TILE_PLUS_OSD"                                        "
-        "       ! nveglglessink async=0 sync=0                           "
-        "   teee.                                                        "
-        "       ! "TILE_PLUS_OSD"                                        "
+        "       ! tee name=teee2                                         "
+        "   teee2.                                                       "
         "       ! queue                                                  "
         "       ! identity name=nvds_to_gst                              "
         "       ! queue                                                  "
@@ -272,6 +271,8 @@ main (int argc, char **argv)
         "       ! rtph265pay                                             "
         "       ! identity name=gst_to_rtp                               "
         "       ! udpsink host=127.0.0.1 port="UDP_PORT"                 "
+        "   teee2.                                                       "
+        "       ! nveglglessink async=0 sync=0                           "
         ;;;;;;;;
 
     gchar *desc = g_strdup (desc_templ);
