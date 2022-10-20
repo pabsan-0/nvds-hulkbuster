@@ -78,6 +78,9 @@ control_handler (GstPad * pad, GstPadProbeInfo * info, gpointer u_data)
     else if (strcmp(words[0], "set") == 0) 
         control_set_property(words, pipe);
 
+    else if (strcmp(words[0], "get") == 0) 
+        control_get_property(words, pipe);
+
     else if (strcmp(words[0], "echo") == 0) 
         control_echo(words);
 
@@ -91,37 +94,77 @@ control_handler (GstPad * pad, GstPadProbeInfo * info, gpointer u_data)
 
 
 
+// set valve0 drop 1
 static int
 control_set_property(char** words, GstElement* pipe)
 {
-    if (strcmp(words[N_INPUTS-1], "\0") == 0){
+    // Need at least 1cmd + 3args
+    if (words[3] == 0){
         GST_ERROR ("Not enough arguments: passed '%s' '%s' '%s'", 
             words[1], words[2], words[3]);
     }
 
-    // set valve0 drop 1
-
-
     char* element_name = words[1];
     char* property_name = words[2];
-    char* property_value = atoi(words[3]);   //--------------------------------- fixme
-
-    gst_element_set_state (pipe, GST_STATE_PAUSED);
+    char* property_value = atoi(words[3]);   //--------------------------------- fixme for anytype
 
     GstElement* element = gst_bin_get_by_name (GST_BIN (pipe), element_name);
     
-    // g_object_get 
+    GValue old_value = G_VALUE_INIT;
+    g_object_get_property (G_OBJECT (element), property_name, &old_value);
+    char* old_value_str = g_strdup_value_contents (&old_value);
     
+    gst_element_set_state (pipe, GST_STATE_PAUSED);
     g_object_set (G_OBJECT (element), property_name, property_value, NULL);
     usleep(10 * 1000);
     gst_element_set_state (pipe, GST_STATE_PLAYING);
 
-    // g_object_get  
+    GValue new_value = G_VALUE_INIT;
+    g_object_get_property (G_OBJECT (element), property_name, &new_value);
+    char* new_value_str = g_strdup_value_contents (&new_value);
 
-    // GST_DEBUG (prop - > newprop)
-    
+    printf(">> Element '%s', property '%s': '%s' -> '%s' \n",
+        element_name, 
+        property_name,
+        old_value_str,
+        new_value_str
+        );
+
+    gst_object_unref(element);
+    g_value_unset(&new_value);   
+    g_value_unset(&old_value);   
+    free(old_value_str);
+    free(new_value_str);    
     return 0;
 }
+
+
+static int
+control_get_property(char** words, GstElement* pipe)
+{   
+    // Need at least 1cmd + 2args
+    if (words[2] == 0){
+        GST_ERROR ("Not enough arguments: passed '%s' '%s' ", 
+            words[1], words[2]);
+    }
+
+    char* element_name = words[1];
+    char* property_name = words[2];
+    GValue value = G_VALUE_INIT;
+
+    GstElement* element = gst_bin_get_by_name (GST_BIN (pipe), element_name);  
+    g_object_get_property (G_OBJECT (element), property_name, &value);
+    printf(">> Element '%s', property '%s': '%s' \n", 
+        element_name, 
+        property_name, 
+        g_strdup_value_contents (&value)
+        );
+    
+    gst_object_unref(element);
+    g_value_unset(&value);
+    return 0;
+}
+
 
 
 

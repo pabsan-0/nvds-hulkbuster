@@ -20,6 +20,9 @@ static int
 control_set_property(char** words, GstElement* pipeline);
 
 static int
+control_get_property(char** words, GstElement* pipeline);
+
+static int
 control_help(void);
 
 
