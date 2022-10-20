@@ -14,7 +14,7 @@
 #include "gstcustommeta.h"
 #include "gstfdcontrol.h"
 
-#define CAM_0 "/dev/video7"
+#define CAM_0 "/dev/video6"
 #define CAM_1 "/dev/video8"
 #define CAM_2 "/dev/video4"
 #define CAM_3 "/dev/video2"
@@ -47,10 +47,10 @@
 
 #define REMUX \
     " nvstreamdemux name=demux                                           " \
-    "     demux.src_0 ! valve name=valve_cam_0 drop=false ! remux.sink_0 " \
-    "     demux.src_1 ! valve name=valve_cam_1 drop=false ! remux.sink_1 " \
-    "     demux.src_2 ! valve name=valve_cam_2 drop=false ! remux.sink_2 " \
-    "     demux.src_3 ! valve name=valve_cam_3 drop=false ! remux.sink_3 " \
+    "     demux.src_0 ! valve name=remux_v0 drop=false ! remux.sink_0    " \
+    "     demux.src_1 ! valve name=remux_v1 drop=false ! remux.sink_1    " \
+    "     demux.src_2 ! valve name=remux_v2 drop=false ! remux.sink_2    " \
+    "     demux.src_3 ! valve name=remux_v3 drop=false ! remux.sink_3    " \
     " nvstreammux name=remux nvbuf-memory-type=0                         " \
     "       batch-size="BATCH" width=640 height=640                      " \
     "       sync-inputs=1 batched-push-timeout=500000                    """
@@ -242,8 +242,8 @@ main (int argc, char **argv)
     loop = g_main_loop_new (NULL, FALSE);
 
     const gchar *desc_templ = \
-        " fdsrc fd=0 name=control ! fakesink dump=false                  " // IF PIPE FREEZES, JUST FEED INPUT TO STDIN
-        " v4l2src device="CAM_0" ! "V4L2_DECODE" ! valve name=valve0 ! mux.sink_0            "
+        " fdsrc fd=0 name=control ! fakesink dump=false async=false      " 
+        " v4l2src device="CAM_0" ! "V4L2_DECODE" ! mux.sink_0            "
         " v4l2src device="CAM_1" ! "V4L2_DECODE" ! mux.sink_1            "
         " v4l2src device="CAM_2" ! "V4L2_DECODE" ! mux.sink_2            "
         " v4l2src device="CAM_3" ! "V4L2_DECODE" ! mux.sink_3            "
