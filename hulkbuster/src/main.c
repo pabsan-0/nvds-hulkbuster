@@ -12,12 +12,13 @@
 #include "gstnvdsmeta.h"
 #include "gst-nvmessage.h"
 #include "gstcustommeta.h"
+#include "gstfdcontrol.h"
 
-
-#define CAM_0 "/dev/video7"
+#define CAM_0 "/dev/video6"
 #define CAM_1 "/dev/video8"
 #define CAM_2 "/dev/video4"
 #define CAM_3 "/dev/video2"
+
 
 #define CAP_W  "640"
 #define CAP_H  "480"
@@ -31,7 +32,7 @@
 
 #define MQTT_CONN_STR    "127.0.0.1;5554"
 #define MQTT_PROTO_SO    "/nvds/lib/libnvds_mqtt_proto.so"
-#define MQTT_MSGCONV_CFG "/host/udp-single-stream/msgconv_config.txt"
+#define MQTT_MSGCONV_CFG "/host/hulkbuster/data/msgconv_config.txt"
 
 #define DET_MESSAGE_SIZE (200)
 #define UDP_PORT "1234"
@@ -46,10 +47,10 @@
 
 #define REMUX \
     " nvstreamdemux name=demux                                           " \
-    "     demux.src_0 ! valve name=valve_cam_0 drop=false ! remux.sink_0 " \
-    "     demux.src_1 ! valve name=valve_cam_1 drop=false ! remux.sink_1 " \
-    "     demux.src_2 ! valve name=valve_cam_2 drop=false ! remux.sink_2 " \
-    "     demux.src_3 ! valve name=valve_cam_3 drop=false ! remux.sink_3 " \
+    "     demux.src_0 ! valve name=remux_v0 drop=false ! remux.sink_0    " \
+    "     demux.src_1 ! valve name=remux_v1 drop=false ! remux.sink_1    " \
+    "     demux.src_2 ! valve name=remux_v2 drop=false ! remux.sink_2    " \
+    "     demux.src_3 ! valve name=remux_v3 drop=false ! remux.sink_3    " \
     " nvstreammux name=remux nvbuf-memory-type=0                         " \
     "       batch-size="BATCH" width=640 height=640                      " \
     "       sync-inputs=1 batched-push-timeout=500000                    """
@@ -155,13 +156,13 @@ meta_gst_to_rtp (GstPad * pad, GstPadProbeInfo * info, gpointer u_data)
 }
 
 
+
 gint
 place_probe (GstElement *pipeline, gchar *elementName,
-    GstPadProbeCallback cb_probe)
+    GstPadProbeCallback cb_probe, gpointer u_data)
 {
     GstElement* id;
     GstPad* id_src;
-    char* u_data = NULL;
 
     id = gst_bin_get_by_name (GST_BIN (pipeline), elementName);
     id_src = gst_element_get_static_pad (id, "src");
@@ -241,6 +242,7 @@ main (int argc, char **argv)
     loop = g_main_loop_new (NULL, FALSE);
 
     const gchar *desc_templ = \
+        " fdsrc fd=0 name=control ! fakesink dump=false async=false      " 
         " v4l2src device="CAM_0" ! "V4L2_DECODE" ! mux.sink_0            "
         " v4l2src device="CAM_1" ! "V4L2_DECODE" ! mux.sink_1            "
         " v4l2src device="CAM_2" ! "V4L2_DECODE" ! mux.sink_2            "
@@ -254,7 +256,7 @@ main (int argc, char **argv)
         " ! nvtracker display-tracking-id=0 compute-hw=0                 "
         "       ll-lib-file="TRACKER_SO"                                 "
         "                                                                "
-        // " ! "REMUX"                                                   "
+        " ! "REMUX"                                                      "
         " ! tee name=teee1                                               "
         "   teee1.                                                       "
         "       ! "MQTT_SINK"                                            "
@@ -289,8 +291,9 @@ main (int argc, char **argv)
     gst_object_unref (bus);
 
     // Meta injection on RTP packets
-    place_probe(pipeline, "nvds_to_gst", meta_nvds_to_gst);
-    place_probe(pipeline, "gst_to_rtp", meta_gst_to_rtp);
+    place_probe(pipeline, "nvds_to_gst", meta_nvds_to_gst, NULL);
+    place_probe(pipeline, "gst_to_rtp", meta_gst_to_rtp, NULL);
+    place_probe(pipeline, "control", control_handler, pipeline);
 
     // Set the pipeline to "playing" state
     gst_element_set_state (pipeline, GST_STATE_PLAYING);
