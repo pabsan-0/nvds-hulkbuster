@@ -5,11 +5,12 @@
 
 #define SEP (" ")
 
+#define CMD_PROMPT (">>> ")
+
+#define PIPE_RESET_TIME_MS (10)
+
 #define RAISE_NO_IMPLEMENTED(string) \
     GST_ERROR ("Passed '%s' to control handler. Not implemented", string)
-
-
-
 
 
 /* 
@@ -67,8 +68,6 @@ control_handler (GstPad * pad, GstPadProbeInfo * info, gpointer u_data)
         GST_ERROR ("Command buffer underflow: Passed single '\n'.");
     }
 
-    
-
     if (words[0] == 0)
         ;
 
@@ -87,6 +86,11 @@ control_handler (GstPad * pad, GstPadProbeInfo * info, gpointer u_data)
     else
         RAISE_NO_IMPLEMENTED(words[0]);
 
+    // A command prompt for further action
+    // A tad dirty: user needs to pass a stdin buffer before pipe starts
+    // hence this gets properly rendered.
+    printf(CMD_PROMPT);
+    fflush(stdout);
 
     free(text_command);   
     return GST_PAD_PROBE_OK;
@@ -106,7 +110,7 @@ control_set_property(char** words, GstElement* pipe)
 
     char* element_name = words[1];
     char* property_name = words[2];
-    char* property_value = atoi(words[3]);   //--------------------------------- fixme for anytype
+    char* property_value_str = words[3];  
 
     GstElement* element = gst_bin_get_by_name (GST_BIN (pipe), element_name);
     
@@ -115,15 +119,15 @@ control_set_property(char** words, GstElement* pipe)
     char* old_value_str = g_strdup_value_contents (&old_value);
     
     gst_element_set_state (pipe, GST_STATE_PAUSED);
-    g_object_set (G_OBJECT (element), property_name, property_value, NULL);
-    usleep(10 * 1000);
+    gst_util_set_object_arg (G_OBJECT (element), property_name, property_value_str);
+    usleep(PIPE_RESET_TIME_MS * 1000);
     gst_element_set_state (pipe, GST_STATE_PLAYING);
 
     GValue new_value = G_VALUE_INIT;
     g_object_get_property (G_OBJECT (element), property_name, &new_value);
     char* new_value_str = g_strdup_value_contents (&new_value);
 
-    printf(">> Element '%s', property '%s': '%s' -> '%s' \n",
+    printf("Element '%s', property '%s': '%s' -> '%s' \n",
         element_name, 
         property_name,
         old_value_str,
@@ -154,7 +158,7 @@ control_get_property(char** words, GstElement* pipe)
 
     GstElement* element = gst_bin_get_by_name (GST_BIN (pipe), element_name);  
     g_object_get_property (G_OBJECT (element), property_name, &value);
-    printf(">> Element '%s', property '%s': '%s' \n", 
+    printf("Element '%s', property '%s': '%s' \n", 
         element_name, 
         property_name, 
         g_strdup_value_contents (&value)
