@@ -1,18 +1,19 @@
 #include "gstfdcontrol.h"
+#include <stdio.h>
 
 
-#define N_INPUTS (5)
+static int control_set_property(char** words, int n_words, GstElement* pipeline);
+static int control_get_property(char** words, int n_words, GstElement* pipeline);
+static int control_help(void);
+static int control_echo(char** words, int n_words);
+static int control_dummy(void);
 
-#define SEP (" ")
 
-#define CMD_PROMPT (">>> ")
-
-#define PIPE_RESET_TIME_MS (10)
-
-#define RAISE_NO_IMPLEMENTED(str) {                                          \
+#define RAISE_NOT_IMPLEMENTED(str) {                                          \
     GST_ERROR ("Passed '%s' to control handler. Not implemented", str);      \
     printf("Unknown command: '%s'. Use 'help' to see all options. \n", str); \
     }
+
 
 #define RAISE_BAD_ARGUMENTS(fname, words, nw) {        \
         GST_ERROR ("Bad arguments for %s", fname);     \
@@ -23,21 +24,13 @@
 
 
 
-static int control_echo(char** words, int n_words);
-static int control_set_property(char** words, int n_words, GstElement* pipeline);
-static int control_get_property(char** words, int n_words, GstElement* pipeline);
-static int control_help(void);
-static int control_dummy(void);
-
-
-
 GstPadProbeReturn
 control_handler (GstPad * pad, GstPadProbeInfo * info, gpointer u_data)
 {
     GstBuffer *buf = info->data;
     GstElement *pipe = u_data;   
     char* text_command;
-    char* words[N_INPUTS] = { 0 };
+    char* words[INPUT_BUFFER_WORDS] = { 0 };
     int nw = 0;
     
 
@@ -60,18 +53,18 @@ control_handler (GstPad * pad, GstPadProbeInfo * info, gpointer u_data)
 
     // Split command into a sequence of words
     nw = 0;
-    char *p = strtok (text_command, SEP);
+    char *p = strtok (text_command, INPUT_BUFFER_SEP);
     while (p != NULL) {
 
         // condition here so `i` counts all arguments, even if too many
-        if (nw <= N_INPUTS - 1) 
+        if (nw <= INPUT_BUFFER_WORDS - 1) 
             words[nw] = p;   
         
-        p = strtok (NULL, SEP);    
+        p = strtok (NULL, INPUT_BUFFER_SEP);    
         nw++;
     }
 
-    if (nw > N_INPUTS) {
+    if (nw > INPUT_BUFFER_WORDS) {
         GST_ERROR ("Command buffer overflow: Too many words.");
     } else if (nw == 0) {
         GST_ERROR ("Command buffer underflow: No words provided.");
@@ -99,7 +92,7 @@ control_handler (GstPad * pad, GstPadProbeInfo * info, gpointer u_data)
         control_dummy();
 
     else
-        RAISE_NO_IMPLEMENTED(words[0]);
+        RAISE_NOT_IMPLEMENTED(words[0]);
 
 
 
@@ -136,7 +129,7 @@ control_set_property(char** words, int n_words, GstElement* pipe)
     
     gst_element_set_state (pipe, GST_STATE_PAUSED);
     gst_util_set_object_arg (G_OBJECT (element), property_name, property_value_str);
-    usleep(PIPE_RESET_TIME_MS * 1000);
+    g_usleep(PIPE_RESET_TIME_MS * 1000);
     gst_element_set_state (pipe, GST_STATE_PLAYING);
 
     GValue new_value = G_VALUE_INIT;
@@ -194,7 +187,7 @@ control_help(void)
     printf("Gstreamer Control Handler.                      \n"
            "                                                \n"
            "Helper CLI for interacting with live pipelines. \n"
-           "Your STDIN is being sent to Gstreamer.          \n"
+           "Your STDIN is being sent to Gstreamer.           \n"
            "                                                \n"
            "Usage:                                          \n"
            "    set <element_name> <property_name> <value>  \n"
@@ -202,6 +195,8 @@ control_help(void)
            "    echo [args]                                 \n"
            "    help                                        \n"
            "    dummy                                       \n"
+           "                                                \n"
+           "Kill the pipeline with ^C to exit, as usual.    \n"
            "                                                \n"
           );;;;
     return 0;
@@ -212,7 +207,7 @@ static int
 control_echo(char** words, int n_words)
 {
     printf("@ echo: ");
-    for (int i = 0; i < N_INPUTS; ++i) 
+    for (int i = 0; i < INPUT_BUFFER_WORDS; ++i) 
         printf("'%s' ", words[i]);
     printf(" (counted %d words) \n", n_words);
 
@@ -223,6 +218,6 @@ control_echo(char** words, int n_words)
 static int
 control_dummy(void)
 {
-    RAISE_NO_IMPLEMENTED("dummy");
+    RAISE_NOT_IMPLEMENTED("dummy");
     return 0;
 }

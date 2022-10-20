@@ -256,7 +256,7 @@ main (int argc, char **argv)
         " ! nvtracker display-tracking-id=0 compute-hw=0                 "
         "       ll-lib-file="TRACKER_SO"                                 "
         "                                                                "
-        // " ! "REMUX"                                                      "
+        " ! "REMUX"                                                      "
         " ! tee name=teee1                                               "
         "   teee1.                                                       "
         "       ! "MQTT_SINK"                                            "
