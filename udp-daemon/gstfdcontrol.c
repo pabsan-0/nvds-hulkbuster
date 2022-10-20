@@ -1,7 +1,7 @@
 #include "gstfdcontrol.h"
 
 
-#define N_INPUTS (4)
+#define N_INPUTS (5)
 
 #define SEP (" ")
 
@@ -23,8 +23,10 @@ control_handler (GstPad * pad, GstPadProbeInfo * info, gpointer u_data)
     GstBuffer *buf = info->data;
     GstElement *pipe = u_data;   
     char* text_command;
-    char* words[N_INPUTS] = {"\0", "\0", "\0", "\0"};
+    char* words[N_INPUTS] = { 0 };
+    int i = 0;
 
+    
 
     GstMapInfo map;
     if (!gst_buffer_map (buf, &map, GST_MAP_READ)) {
@@ -32,30 +34,42 @@ control_handler (GstPad * pad, GstPadProbeInfo * info, gpointer u_data)
         return GST_PAD_PROBE_OK;
     }
 
-
-    // Fetch command and purge trailing string
+    // Fetch command and purge trailing newline in-place
     text_command = (char*) calloc(1, map.size);
     memcpy(text_command, map.data, map.size);
-    text_command = strtok(text_command, "\n");
     gst_buffer_unmap (buf, &map);
 
+    // Deal with trailing newline
+    // Do NOT reassign to itself -> would return NULL if no '\n'
+    // strtok ignores first/last chars. Input of "\n" handled as NotImplemented
+    strtok(text_command, "\n"); 
+    
+    GST_DEBUG ("Command buffer: '%s'.", text_command);
 
     // Split command into a sequence of words
-    int i = 0;
+    i = 0;
     char *p = strtok (text_command, SEP);
-    while (p != NULL && i <= N_INPUTS - 1) {
-        words[i++] = p;
-        p = strtok (NULL, SEP);
+    while (p != NULL) {
+
+        // condition here so `i` counts all arguments, even if too many
+        if (i <= N_INPUTS - 1) 
+            words[i] = p;   
+        
+        p = strtok (NULL, SEP);    
+        i++;
     }
 
-    if (i > N_INPUTS) {                                             //---------- review
-        GST_ERROR ("Argument buffer overflow: Too many arguments.");
+    if (i > N_INPUTS) {
+        GST_ERROR ("Command buffer overflow: Too many words.");
     } else if (i == 0) {
-        GST_ERROR ("Argument buffer underflow: No arguments provided.");
+        GST_ERROR ("Command buffer underflow: No words provided.");
+    } else if ('\n' == text_command[0]) {
+        GST_ERROR ("Command buffer underflow: Passed single '\n'.");
     }
 
+    
 
-    if (strcmp(words[0], "\0") == 0)
+    if (words[0] == 0)
         ;
 
     else if (strcmp(words[0], "help") == 0)
@@ -95,11 +109,16 @@ control_set_property(char** words, GstElement* pipe)
     gst_element_set_state (pipe, GST_STATE_PAUSED);
 
     GstElement* element = gst_bin_get_by_name (GST_BIN (pipe), element_name);
-    g_object_set (G_OBJECT (element), property_name, property_value, NULL);
     
+    // g_object_get 
+    
+    g_object_set (G_OBJECT (element), property_name, property_value, NULL);
     usleep(10 * 1000);
-
     gst_element_set_state (pipe, GST_STATE_PLAYING);
+
+    // g_object_get  
+
+    // GST_DEBUG (prop - > newprop)
     
     return 0;
 }
