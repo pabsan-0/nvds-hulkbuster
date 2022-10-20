@@ -1,5 +1,7 @@
 # NVDS-Hulkbuster
 
+
+## Tips
 - Do not use single quotes in gst-parse launch pipelines
 - Run rtsp server outside of docker
 - Funky fixes for 4 cameras' goblins:
