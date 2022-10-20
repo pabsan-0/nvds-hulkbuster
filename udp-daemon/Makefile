@@ -48,3 +48,7 @@ clean:
 ## This rule was added on top of NIVIDIA's file, plus referenced in rule 'all'
 receiver:
 	gcc -Wall -g3  receiver.c -o $@.o `pkg-config --cflags --libs gstreamer-1.0 gstreamer-rtp-1.0`
+
+test: all
+	# SEND STDIN INPUT TO START
+	GST_DEBUG=1 ./hulkbuster
