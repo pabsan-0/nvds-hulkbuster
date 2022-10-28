@@ -235,7 +235,22 @@ Here are some resources found useful during the development of this repo. Meant 
 
 ## Contribution guidelines
 
-Tag any significant release as in: `whatever_tag[-nvdsVERSION]-platform`. Example `udpx4-nvds6.1-ubuntu` or `udpx4-nvds6.0-jetson`
+**Static branches**. General purpose branches.
+
+- `master`: 
+    - Mean to be the template from which to fork and modify 
+    - Should contain the most "complete" Hulkbuster version
+    - Must be the only branch containing consistent documentation, so as to avoid redundancy
+- `experimental`
+    - A no man's land branch for testing junk and breaking stuff.
+
+**Release branches**. Modifications (generally off master) that fit a specific use case. Branch any significant release as in: `whatever_tag[-nvdsVERSION]-platform`. Some already-developed examples are:
+
+- `udp_tiled-nvds6.1-ubuntu`: four `v4l2` cams. MQTT detections. Single udp stream with tiled output & metadata attached.
+- `udp_2x4streams-nvds6.1-ubuntu`: four `v4l2` cams. Each stream is sent through 2 different udp ports w/ metadata attached, totalling 8 output udp streams.
+- `*`
+
+*This list needs not be updated with new release branches*, the above serve as example only.
 
 
 ## Reach out
