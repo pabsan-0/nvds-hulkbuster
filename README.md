@@ -7,7 +7,24 @@ The Hulkbuster is a feature-rich Nvidia Deepstream sample application for object
 
 ## Contents
 
-[TOC]
+
+
+* [The Hulkbuster app](#the-hulkbuster-app)
+    * [Dependencies](#dependencies)
+    * [Running the application](#running-the-application)
+* [The Receiver app](#the-receiver-app)
+    * [Dependencies](#dependencies-1)
+    * [Running the application](#running-the-application-1)
+* [Utils](#utils)
+* [Novel pipeline elements](#novel-pipeline-elements)
+    * [The REMUX element](#the-remux-element)
+    * [File descriptor Controller](#file-descriptor-controller)
+    * [Gst Custom meta](#gst-custom-meta)
+* [Notes, references and such](#notes-references-and-such)
+    * [Gstreamer/NVDS issues](#gstreamernvds-issues)
+    * [General networking](#general-networking)
+    * [Novice C resources](#novice-c-resources)
+
 
 
 ## The Hulkbuster app
@@ -231,29 +248,4 @@ Here are some resources found useful during the development of this repo. Meant 
     - What should I put in `pkg-config`? 
         - If facing linker error: `pkg-config --list-all | grep YOUR_HUNCH`
         - See this thread: [How are you supposed to know what library names are](https://stackoverflow.com/questions/48756209/how-are-you-supposed-to-know-what-library-names-are)
-
-
-## Contribution guidelines
-
-**Static branches**. General purpose branches.
-
-- `master`: 
-    - Mean to be the template from which to fork and modify 
-    - Should contain the most "complete" Hulkbuster version
-    - Must be the only branch containing consistent documentation, so as to avoid redundancy
-- `experimental`
-    - A no man's land branch for testing junk and breaking stuff.
-
-**Release branches**. Modifications (generally off master) that fit a specific use case. Branch any significant release as in: `whatever_tag[-nvdsVERSION]-platform`. Some already-developed examples are:
-
-- `udp_tiled-nvds6.1-ubuntu`: four `v4l2` cams. MQTT detections. Single udp stream with tiled output & metadata attached.
-- `udp_2x4streams-nvds6.1-ubuntu`: four `v4l2` cams. Each stream is sent through 2 different udp ports w/ metadata attached, totalling 8 output udp streams.
-- `*`
-
-*This list needs not be updated with new release branches*, the above serve as example only.
-
-
-## Reach out
-
-Pablo Santana -> psantana@catec.aero
 
